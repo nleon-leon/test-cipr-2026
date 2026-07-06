@@ -1,125 +1,110 @@
-import streamlit as st
+import streamlit as Size
 import pandas as pd
 import matplotlib.pyplot as plt
-import seaborn as sns
+from fpdf import FPDF
+import io
 
-# Configuración de página
-st.set_page_config(page_title="Resultados Test CIP-R 2026", page_icon="🎓", layout="centered")
+# Configuración de la página
+st.set_page_config(page_title="Test CIP-R con Reporte PDF", page_icon="📊", layout="wide")
 
-# Estilos de la tarjeta con fondo oscuro y letra blanca
-st.markdown("""
-    <style>
-    .main-title { font-size: 32px; font-weight: bold; color: #1E3A8A; text-align: center; margin-bottom: 20px; }
-    .subtitle { font-size: 18px; color: #4B5563; text-align: center; margin-bottom: 40px; }
-    .card { background-color: #1E293B; color: #FFFFFF; padding: 20px; border-radius: 10px; margin-bottom: 20px; border-left: 5px solid #3B82F6; }
-    </style>
-""", unsafe_allow_html=True)
+st.title("📋 Cuestionario de Intereses Profesionales Revisado (CIP-R)")
+st.write("Responde a las siguientes preguntas con total sinceridad para descubrir tu perfil vocacional.")
 
-st.markdown('<div class="main-title">🎯 Conoce tus Resultados: Test CIP-R 2026</div>', unsafe_allow_html=True)
-st.markdown('<div class="subtitle">Descubre tus principales intereses vocacionales ingresando tus datos</div>', unsafe_allow_html=True)
+# --- DATOS DEL TEST (Escalas y Preguntas) ---
+escalas = {
+    "Cálculo y Administración": ["¿Te gustaría llevar la contabilidad de una empresa?", "¿Te interesa aprender a calcular impuestos y presupuestos?"],
+    "Científica y Tecnológica": ["¿Te da curiosidad saber cómo funcionan los virus a nivel molecular?", "¿Te gustaría investigar nuevos materiales para la tecnología?"],
+    "Humanística y Social": ["¿Te interesaría trabajar ayudando a resolver problemas comunitarios?", "¿Te gustaría estudiar el comportamiento de las sociedades?"],
+    "Artística y Creativa": ["¿Disfrutas diseñando logotipos o espacios visuales?", "¿Te interesaría aprender técnicas de pintura o escultura?"],
+    "Naturaleza y Aire Libre": ["¿Te gustaría trabajar en la conservación de parques nacionales?", "¿Te interesa el estudio y cuidado de la fauna silvestre?"]
+}
 
-# Carga de datos optimizada
-@st.cache_data
-def cargar_datos():
-    df = pd.read_excel("Test CIP-R 4to Medio 2026 (1).xlsx", sheet_name='Respuestas decodificadas')
-    return df
+# Inicializar estado para guardar respuestas
+if 'respuestas' not in st.session_state:
+    st.session_state.respuestas = {}
 
-try:
-    df_test = cargar_datos()
-    df_test['Rut_clean'] = df_test['Rut sin puntos y con guión (Ej: 12345678-9)'].astype(str).str.strip().str.upper()
+nombre = st.text_input("Introduce tu nombre completo:", "")
 
-    # Formulario de consulta
-    with st.container():
-        rut_usuario = st.text_input("🔑 Ingresa tu RUT (con guión y dígito verificador, ej: 12345678-9):")
-        buscar = st.button("Consultar mis resultados")
+st.subheader("📝 Cuestionario")
+st.write("Selecciona tu nivel de interés para cada actividad (1: No me interesa, 5: Me interesa mucho)")
 
-    if buscar or rut_usuario:
-        rut_buscar = rut_usuario.strip().upper()
-        estudiante = df_test[df_test['Rut_clean'] == rut_buscar]
+# Mostrar preguntas dinámicamente
+for escala, preguntas in escalas.items():
+    with st.expander(f"Área: {escala}"):
+        for preg in preguntas:
+            key = f"{escala}_{preg}"
+            st.session_state.respuestas[key] = st.slider(preg, 1, 5, 3, key=key)
 
-        if not estudiante.empty:
-            fila = estudiante.iloc[0]
-            nombre = f"{fila['Nombres']} {fila['Primer Apellido']} {fila['Segundo Apellido']}"
-            colegio = fila['Establecimientos']
-            curso = fila['Curso']
-
-            st.success(f"¡Hola, {nombre}! Hemos encontrado tus resultados.")
+# --- PROCESAMIENTO DE RESULTADOS ---
+if st.button("📊 Calcular Resultados y Generar Reporte"):
+    if not nombre:
+        st.warning("Por favor, introduce tu nombre antes de calcular los resultados.")
+    else:
+        # Calcular promedios por escala
+        puntajes = {}
+        for escala, preguntas in escalas.items():
+            suma = 0
+            for preg in preguntas:
+                suma += st.session_state.respuestas[f"{escala}_{preg}"]
+            puntajes[escala] = suma / len(preguntas)
+        
+        df_resultados = pd.DataFrame(list(puntajes.items()), columns=['Escala', 'Puntaje'])
+        
+        st.success(f"¡Test completado con éxito, {nombre}!")
+        
+        # Mostrar gráfico en pantalla
+        fig, ax = plt.subplots(figsize=(8, 4))
+        colors = ['#38bdf8', '#0ea5e9', '#0284c7', '#0369a1', '#075985']
+        ax.barh(df_resultados['Escala'], df_resultados['Puntaje'], color=colors)
+        ax.set_xlim(1, 5)
+        ax.set_xlabel('Nivel de Interés')
+        plt.tight_layout()
+        st.pyplot(fig)
+        
+        # --- GENERACIÓN DEL PDF ---
+        # Guardar gráfico en buffer de memoria
+        img_buf = io.BytesIO()
+        plt.savefig(img_buf, format='png', dpi=300)
+        img_buf.seek(0)
+        
+        # Crear PDF clásico
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.set_font("Helvetica", "B", 18)
+        pdf.set_text_color(3, 105, 161) # Color azul institucional
+        pdf.cell(0, 15, "Reporte Oficial - Test CIP-R", ln=True, align="C")
+        pdf.ln(5)
+        
+        pdf.set_font("Helvetica", "", 12)
+        pdf.set_text_color(0, 0, 0)
+        pdf.cell(0, 8, f"Evaluado: {nombre}", ln=True)
+        pdf.cell(0, 8, "Herramienta: Cuestionario de Intereses Profesionales Revisado", ln=True)
+        pdf.ln(10)
+        
+        pdf.set_font("Helvetica", "B", 14)
+        pdf.cell(0, 8, "Resultados por Escala:", ln=True)
+        pdf.set_font("Helvetica", "", 12)
+        
+        for esc, punt en puntajes.items():
+            pdf.cell(0, 7, f"  • {esc}: {punt:.1f} / 5.0", ln=True)
             
-            # Ficha del Estudiante
-            st.markdown(f"""
-            <div class="card">
-                <span style="font-size: 18px; font-weight: bold; color: #3B82F6;">📌 Ficha del Estudiante</span><br><br>
-                🏫 <b>Colegio:</b> {colegio} <br>
-                🎒 <b>Curso:</b> {curso}
-            </div>
-            """, unsafe_allow_html=True)
-
-            # Las 13 áreas oficiales del test
-            areas_oficiales = [
-                'Musical', 'Humanística', 'Económica', 'Tecnológica', 'Biológica', 
-                'Pedagógica', 'Artística', 'Médica', 'Cálculo', 'Jurídica', 
-                'Comunicacional', 'Científica', 'Construcción'
-            ]
-
-            # Buscar los puntajes en el Excel ignorando espacios de más en los títulos de las columnas
-            puntajes = {}
-            for col_excel in fila.index:
-                col_limpia = str(col_excel).strip()
-                if col_limpia in areas_oficiales and not str(col_excel).endswith('.1'):
-                    puntajes[col_limpia] = float(fila[col_excel])
-
-            # Crear el DataFrame con los resultados ordenados
-            df_resultados = pd.DataFrame({
-                'Área Vocacional': list(puntajes.keys()),
-                'Puntaje': list(puntajes.values())
-            }).sort_values(by='Puntaje', ascending=False)
-
-            # --- SECCIÓN GRÁFICA ---
-            st.subheader("📊 Tu Perfil de Intereses Vocacionales")
-            st.write("A mayor puntaje en el gráfico, mayor es tu afinidad o agrado por las actividades de esa área.")
-            
-            fig, ax = plt.subplots(figsize=(10, 5))
-            sns.barplot(x='Puntaje', y='Área Vocacional', data=df_resultados, palette='Blues_r', ax=ax)
-            ax.set_xlabel('Puntaje Obtenido')
-            ax.set_ylabel('Áreas del Test')
-            st.pyplot(fig)
-
-            # --- SECCIÓN DESTACADOS ---
-            st.divider()
-            st.subheader("🌟 Tus 3 Áreas de Mayor Interés")
-            
-            top_3 = df_resultados.head(3)
-            cols = st.columns(3)
-            
-            descripciones = {
-                'Musical': 'Composición, ejecución instrumental, canto y apreciación del arte sonoro.',
-                'Humanística': 'Interés por la historia, literatura, filosofía y el estudio de la evolución social.',
-                'Económica': 'Gestión de recursos, administración, finanzas y organización de empresas.',
-                'Tecnológica': 'Uso y reparación de equipos electrónicos, programación y sistemas digitales.',
-                'Biológica': 'Estudio de ecosistemas, investigación de flora, fauna y procesos naturales.',
-                'Pedagógica': 'Enseñanza, tutoría, asesoramiento educativo y formación de personas.',
-                'Artística': 'Expresión plástica, pintura, escultura, diseño de espacios y manualidades.',
-                'Médica': 'Cuidado de pacientes, diagnosis, instrumental médico y bienestar de la salud.',
-                'Cálculo': 'Resolución de ecuaciones algebraicas, geometría y modelamiento matemático.',
-                'Jurídica': 'Defensa legal, análisis de leyes, juicios y resolución de conflictos institucionales.',
-                'Comunicacional': 'Periodismo, redacción publicitaria, locución de radio y producción audiovisual.',
-                'Científica': 'Investigación experimental en física, química, astronomía y el nivel atómico.',
-                'Construcción': 'Diseño arquitectónico, supervisión de obras viales, puentes y estructuras.'
-            }
-
-            for idx, (index, row) in enumerate(top_3.iterrows()):
-                area_nom = row['Área Vocacional']
-                pts = row['Puntaje']
-                desc = descripciones.get(area_nom, "Orientación hacia el desarrollo profesional de esta área.")
-                
-                with cols[idx]:
-                    st.metric(label=f"Top {idx+1}: {area_nom}", value=f"{int(pts)} pts")
-                    st.caption(desc)
-                    
-            st.info("💡 **Consejo:** Conversa sobre estos resultados con el orientador de tu liceo o el equipo PACE para explorar opciones de estudio.")
-            
-        else:
-            st.error("❌ El RUT ingresado no se encuentra en los registros.")
-
-except FileNotFoundError:
-    st.error(f"No se encontró el archivo de Excel en la carpeta.")
+        pdf.ln(10)
+        
+        # Insertar gráfico en el PDF
+        pdf.image(img_buf, x=15, w=180)
+        
+        pdf.ln(10)
+        pdf.set_font("Helvetica", "I", 10)
+        pdf.set_text_color(100, 100, 100)
+        pdf.multi_cell(0, 5, "Nota: Este reporte es de carácter meramente orientativo y pedagógico. Se recomienda analizar los resultados en conjunto con un orientador vocacional.", align="C")
+        
+        # Output PDF a bytes
+        pdf_bytes = pdf.output()
+        
+        # Botón de descarga del archivo
+        st.download_button(
+            label="📥 Descargar Reporte en PDF",
+            data=pdf_bytes,
+            file_name=f"Reporte_CIPR_{nombre.replace(' ', '_')}.pdf",
+            mime="application/pdf"
+        )
